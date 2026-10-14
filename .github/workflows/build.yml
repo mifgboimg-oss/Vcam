@@ -12,291 +12,338 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Generate Full Android Project & Stitch UI
+      - name: Generate Project Files
         run: |
-          mkdir -p app/src/main/java/com/vcam/studio
-          mkdir -p app/src/main/assets
+          python3 - << 'PYEOF'
+          import os, textwrap
 
-          cat << 'EOF' > settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://api.xposed.info/' }
-              }
-          }
-          rootProject.name = "VCamStudio"
-          include ':app'
-          EOF
+          os.makedirs("app/src/main/java/com/vcam/studio", exist_ok=True)
+          os.makedirs("app/src/main/java/de/robv/android/xposed/callbacks", exist_ok=True)
+          os.makedirs("app/src/main/assets", exist_ok=True)
 
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.2.0' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
-          }
-          EOF
+          def write_file(path, content):
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(textwrap.dedent(content).lstrip())
 
-          cat << 'EOF' > gradle.properties
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          kotlin.code.style=official
-          android.nonTransitiveRClass=true
-          EOF
-
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
-          }
-          android {
-              namespace 'com.vcam.studio'
-              compileSdk 34
-              defaultConfig {
-                  applicationId "com.vcam.studio"
-                  minSdk 26
-                  targetSdk 34
-                  versionCode 1
-                  versionName "4.2.0"
-              }
-              buildTypes {
-                  release {
-                      minifyEnabled false
+          write_file("settings.gradle", """
+              pluginManagement {
+                  repositories {
+                      google()
+                      mavenCentral()
+                      gradlePluginPortal()
                   }
               }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-          }
-          dependencies {
-              implementation 'androidx.core:core-ktx:1.12.0'
-              implementation 'androidx.activity:activity-ktx:1.8.2'
-              compileOnly 'de.robv.android.xposed:api:82'
-          }
-          EOF
-
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
-              <application
-                  android:allowBackup="true"
-                  android:label="VCam Studio"
-                  android:supportsRtl="true"
-                  android:usesCleartextTraffic="true"
-                  android:requestLegacyExternalStorage="true"
-                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <meta-data android:name="xposedmodule" android:value="true" />
-                  <meta-data android:name="xposeddescription" android:value="VCam Studio - Virtual Camera Stream Controller" />
-                  <meta-data android:name="xposedminversion" android:value="82" />
-                  <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          echo "com.vcam.studio.VCamHook" > app/src/main/assets/xposed_init
-
-          cat << 'EOF' > app/src/main/java/com/vcam/studio/MainActivity.kt
-          package com.vcam.studio
-
-          import android.annotation.SuppressLint
-          import android.app.Activity
-          import android.content.Context
-          import android.content.Intent
-          import android.net.Uri
-          import android.os.Bundle
-          import android.webkit.JavascriptInterface
-          import android.webkit.WebView
-          import android.widget.Toast
-          import androidx.activity.ComponentActivity
-          import androidx.activity.result.contract.ActivityResultContracts
-          import java.io.File
-          import java.io.FileOutputStream
-
-          class MainActivity : ComponentActivity() {
-              private lateinit var webView: WebView
-              private val pickVideoLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                  if (result.resultCode == Activity.RESULT_OK) {
-                      result.data?.data?.let { uri -> copyVideoToVCamDir(uri) }
+              dependencyResolutionManagement {
+                  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+                  repositories {
+                      google()
+                      mavenCentral()
                   }
               }
+              rootProject.name = "VCamStudio"
+              include ':app'
+          """)
 
-              @SuppressLint("SetJavaScriptEnabled")
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  webView = WebView(this).apply {
-                      settings.javaScriptEnabled = true
-                      settings.domStorageEnabled = true
-                      addJavascriptInterface(VCamBridge(this@MainActivity), "AndroidBridge")
-                      loadUrl("file:///android_asset/index.html")
-                  }
-                  setContentView(webView)
+          write_file("build.gradle", """
+              plugins {
+                  id 'com.android.application' version '8.2.0' apply false
+                  id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
               }
+          """)
 
-              private fun copyVideoToVCamDir(uri: Uri) {
-                  try {
-                      val vcamDir = File("/sdcard/DCIM/Camera1")
-                      if (!vcamDir.exists()) vcamDir.mkdirs()
-                      val targetFile = File(vcamDir, "virtual.mp4")
-                      contentResolver.openInputStream(uri)?.use { input ->
-                          FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+          write_file("gradle.properties", """
+              org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+              android.useAndroidX=true
+              kotlin.code.style=official
+              android.nonTransitiveRClass=true
+          """)
+
+          write_file("app/build.gradle", """
+              plugins {
+                  id 'com.android.application'
+                  id 'org.jetbrains.kotlin.android'
+              }
+              android {
+                  namespace 'com.vcam.studio'
+                  compileSdk 34
+                  defaultConfig {
+                      applicationId "com.vcam.studio"
+                      minSdk 26
+                      targetSdk 34
+                      versionCode 1
+                      versionName "4.2.0"
+                  }
+                  buildTypes {
+                      release {
+                          minifyEnabled false
                       }
-                      Toast.makeText(this, "تم تجهيز الفيديو بنجاح: virtual.mp4 ✅", Toast.LENGTH_LONG).show()
-                  } catch (e: Exception) {
-                      Toast.makeText(this, "تأكد من إعطاء صلاحية الملفات للتطبيق!", Toast.LENGTH_LONG).show()
+                  }
+                  compileOptions {
+                      sourceCompatibility JavaVersion.VERSION_17
+                      targetCompatibility JavaVersion.VERSION_17
+                  }
+                  kotlinOptions {
+                      jvmTarget = '17'
                   }
               }
+              dependencies {
+                  implementation 'androidx.core:core-ktx:1.12.0'
+                  implementation 'androidx.activity:activity-ktx:1.8.2'
+              }
+          """)
 
-              inner class VCamBridge(private val context: Context) {
-                  private val prefs = context.getSharedPreferences("vcam_config", Context.MODE_PRIVATE)
+          write_file("app/src/main/AndroidManifest.xml", """
+              <?xml version="1.0" encoding="utf-8"?>
+              <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+                  xmlns:tools="http://schemas.android.com/tools">
+                  <uses-permission android:name="android.permission.INTERNET" />
+                  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+                  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+                  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+                  <application
+                      android:allowBackup="true"
+                      android:label="VCam Studio"
+                      android:supportsRtl="true"
+                      android:usesCleartextTraffic="true"
+                      android:requestLegacyExternalStorage="true"
+                      android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                      <meta-data android:name="xposedmodule" android:value="true" />
+                      <meta-data android:name="xposeddescription" android:value="VCam Studio - Virtual Camera Stream Controller" />
+                      <meta-data android:name="xposedminversion" android:value="82" />
+                      <activity android:name=".MainActivity" android:exported="true">
+                          <intent-filter>
+                              <action android:name="android.intent.action.MAIN" />
+                              <category android:name="android.intent.category.LAUNCHER" />
+                          </intent-filter>
+                      </activity>
+                  </application>
+              </manifest>
+          """)
 
-                  @JavascriptInterface
-                  fun setMasterEnabled(enabled: Boolean) {
-                      prefs.edit().putBoolean("enabled", enabled).apply()
-                      updateFlagFile("disable.jpg", !enabled)
+          write_file("app/src/main/assets/xposed_init", "com.vcam.studio.VCamHook\n")
+
+          # واجهات Xposed المدمجة لضمان البناء بدون مشاكل سيرفرات خارجية
+          write_file("app/src/main/java/de/robv/android/xposed/callbacks/XC_LoadPackage.kt", """
+              package de.robv.android.xposed.callbacks
+              class XC_LoadPackage {
+                  class LoadPackageParam {
+                      @JvmField var packageName: String = ""
+                      @JvmField var classLoader: ClassLoader? = null
+                  }
+              }
+          """)
+
+          write_file("app/src/main/java/de/robv/android/xposed/XposedStubs.kt", """
+              package de.robv.android.xposed
+              import de.robv.android.xposed.callbacks.XC_LoadPackage
+
+              interface IXposedHookLoadPackage {
+                  fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam)
+              }
+
+              abstract class XC_MethodHook {
+                  class MethodHookParam {
+                      @JvmField var args: Array<Any?> = emptyArray()
+                      @JvmField var thisObject: Any? = null
+                      @JvmField var result: Any? = null
+                  }
+                  protected open fun beforeHookedMethod(param: MethodHookParam) {}
+                  protected open fun afterHookedMethod(param: MethodHookParam) {}
+              }
+
+              object XposedBridge {
+                  @JvmStatic fun log(text: String) {}
+                  @JvmStatic fun log(t: Throwable) {}
+              }
+
+              object XposedHelpers {
+                  @JvmStatic fun findAndHookMethod(clazz: Class<*>, methodName: String, vararg parameterTypesAndCallback: Any?): Any? = null
+                  @JvmStatic fun findAndHookMethod(className: String, classLoader: ClassLoader?, methodName: String, vararg parameterTypesAndCallback: Any?): Any? = null
+              }
+          """)
+
+          write_file("app/src/main/java/com/vcam/studio/MainActivity.kt", """
+              package com.vcam.studio
+
+              import android.annotation.SuppressLint
+              import android.app.Activity
+              import android.content.Context
+              import android.content.Intent
+              import android.net.Uri
+              import android.os.Bundle
+              import android.webkit.JavascriptInterface
+              import android.webkit.WebView
+              import android.widget.Toast
+              import androidx.activity.ComponentActivity
+              import androidx.activity.result.contract.ActivityResultContracts
+              import java.io.File
+              import java.io.FileOutputStream
+
+              class MainActivity : ComponentActivity() {
+                  private lateinit var webView: WebView
+                  private val pickVideoLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                      if (result.resultCode == Activity.RESULT_OK) {
+                          result.data?.data?.let { uri -> copyVideoToVCamDir(uri) }
+                      }
                   }
 
-                  @JavascriptInterface
-                  fun pickMedia() {
-                      val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "video/*" }
-                      pickVideoLauncher.launch(intent)
+                  @SuppressLint("SetJavaScriptEnabled")
+                  override fun onCreate(savedInstanceState: Bundle?) {
+                      super.onCreate(savedInstanceState)
+                      webView = WebView(this).apply {
+                          settings.javaScriptEnabled = true
+                          settings.domStorageEnabled = true
+                          addJavascriptInterface(VCamBridge(this@MainActivity), "AndroidBridge")
+                          loadUrl("file:///android_asset/index.html")
+                      }
+                      setContentView(webView)
                   }
 
-                  @JavascriptInterface
-                  fun setStreamUrl(url: String) {
-                      prefs.edit().putString("stream_url", url).apply()
-                      Toast.makeText(context, "تم ربط البث: $url", Toast.LENGTH_SHORT).show()
-                  }
-
-                  @JavascriptInterface
-                  fun setRotation(deg: Int) { prefs.edit().putInt("rotation", deg).apply() }
-
-                  @JavascriptInterface
-                  fun setMute(muted: Boolean) {
-                      prefs.edit().putBoolean("muted", muted).apply()
-                      updateFlagFile("no-silent.jpg", !muted)
-                  }
-
-                  @JavascriptInterface
-                  fun setFlip(flipped: Boolean) { prefs.edit().putBoolean("flipped", flipped).apply() }
-
-                  @JavascriptInterface
-                  fun setPlaybackState(playing: Boolean) { prefs.edit().putBoolean("playing", playing).apply() }
-
-                  private fun updateFlagFile(fileName: String, create: Boolean) {
+                  private fun copyVideoToVCamDir(uri: Uri) {
                       try {
-                          val dir = File("/sdcard/DCIM/Camera1")
-                          if (!dir.exists()) dir.mkdirs()
-                          val file = File(dir, fileName)
-                          if (create && !file.exists()) file.createNewFile()
-                          else if (!create && file.exists()) file.delete()
-                      } catch (_: Exception) {}
+                          val vcamDir = File("/sdcard/DCIM/Camera1")
+                          if (!vcamDir.exists()) vcamDir.mkdirs()
+                          val targetFile = File(vcamDir, "virtual.mp4")
+                          contentResolver.openInputStream(uri)?.use { input ->
+                              FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+                          }
+                          Toast.makeText(this, "تم تجهيز الفيديو بنجاح: virtual.mp4", Toast.LENGTH_LONG).show()
+                      } catch (e: Exception) {
+                          Toast.makeText(this, "تأكد من إعطاء صلاحية الملفات للتطبيق!", Toast.LENGTH_LONG).show()
+                      }
+                  }
+
+                  inner class VCamBridge(private val context: Context) {
+                      private val prefs = context.getSharedPreferences("vcam_config", Context.MODE_PRIVATE)
+
+                      @JavascriptInterface
+                      fun setMasterEnabled(enabled: Boolean) {
+                          prefs.edit().putBoolean("enabled", enabled).apply()
+                          updateFlagFile("disable.jpg", !enabled)
+                      }
+
+                      @JavascriptInterface
+                      fun pickMedia() {
+                          val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "video/*" }
+                          pickVideoLauncher.launch(intent)
+                      }
+
+                      @JavascriptInterface
+                      fun setStreamUrl(url: String) {
+                          prefs.edit().putString("stream_url", url).apply()
+                          Toast.makeText(context, "تم ربط البث: " + url, Toast.LENGTH_SHORT).show()
+                      }
+
+                      @JavascriptInterface
+                      fun setRotation(deg: Int) { prefs.edit().putInt("rotation", deg).apply() }
+
+                      @JavascriptInterface
+                      fun setMute(muted: Boolean) {
+                          prefs.edit().putBoolean("muted", muted).apply()
+                          updateFlagFile("no-silent.jpg", !muted)
+                      }
+
+                      @JavascriptInterface
+                      fun setFlip(flipped: Boolean) { prefs.edit().putBoolean("flipped", flipped).apply() }
+
+                      @JavascriptInterface
+                      fun setPlaybackState(playing: Boolean) { prefs.edit().putBoolean("playing", playing).apply() }
+
+                      private fun updateFlagFile(fileName: String, create: Boolean) {
+                          try {
+                              val dir = File("/sdcard/DCIM/Camera1")
+                              if (!dir.exists()) dir.mkdirs()
+                              val file = File(dir, fileName)
+                              if (create && !file.exists()) file.createNewFile()
+                              else if (!create && file.exists()) file.delete()
+                          } catch (_: Exception) {}
+                      }
                   }
               }
-          }
-          EOF
+          """)
 
-          cat << 'EOF' > app/src/main/java/com/vcam/studio/VCamHook.kt
-          package com.vcam.studio
+          write_file("app/src/main/java/com/vcam/studio/VCamHook.kt", """
+              package com.vcam.studio
 
-          import android.graphics.SurfaceTexture
-          import android.hardware.Camera
-          import android.hardware.camera2.CameraCaptureSession
-          import android.media.MediaPlayer
-          import android.view.Surface
-          import de.robv.android.xposed.IXposedHookLoadPackage
-          import de.robv.android.xposed.XC_MethodHook
-          import de.robv.android.xposed.XposedBridge
-          import de.robv.android.xposed.XposedHelpers
-          import de.robv.android.xposed.callbacks.XC_LoadPackage
-          import java.io.File
+              import android.graphics.SurfaceTexture
+              import android.hardware.Camera
+              import android.hardware.camera2.CameraCaptureSession
+              import android.media.MediaPlayer
+              import android.view.Surface
+              import de.robv.android.xposed.IXposedHookLoadPackage
+              import de.robv.android.xposed.XC_MethodHook
+              import de.robv.android.xposed.XposedBridge
+              import de.robv.android.xposed.XposedHelpers
+              import de.robv.android.xposed.callbacks.XC_LoadPackage
+              import java.io.File
 
-          class VCamHook : IXposedHookLoadPackage {
-              private var mediaPlayer: MediaPlayer? = null
+              class VCamHook : IXposedHookLoadPackage {
+                  private var mediaPlayer: MediaPlayer? = null
 
-              override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-                  if (lpparam.packageName == "com.vcam.studio") return
-                  val disableFile = File("/sdcard/DCIM/Camera1/disable.jpg")
-                  if (disableFile.exists()) return
-                  val videoFile = File("/sdcard/DCIM/Camera1/virtual.mp4")
+                  override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+                      if (lpparam.packageName == "com.vcam.studio") return
+                      val disableFile = File("/sdcard/DCIM/Camera1/disable.jpg")
+                      if (disableFile.exists()) return
+                      val videoFile = File("/sdcard/DCIM/Camera1/virtual.mp4")
 
-                  XposedHelpers.findAndHookMethod(
-                      Camera::class.java,
-                      "setPreviewTexture",
-                      SurfaceTexture::class.java,
-                      object : XC_MethodHook() {
-                          override fun beforeHookedMethod(param: MethodHookParam) {
-                              if (!videoFile.exists()) return
-                              val surfaceTexture = param.args[0] as? SurfaceTexture ?: return
-                              startVirtualStream(Surface(surfaceTexture), videoFile.absolutePath)
+                      XposedHelpers.findAndHookMethod(
+                          Camera::class.java,
+                          "setPreviewTexture",
+                          SurfaceTexture::class.java,
+                          object : XC_MethodHook() {
+                              override fun beforeHookedMethod(param: MethodHookParam) {
+                                  if (!videoFile.exists()) return
+                                  val surfaceTexture = param.args[0] as? SurfaceTexture ?: return
+                                  startVirtualStream(Surface(surfaceTexture), videoFile.absolutePath)
+                              }
                           }
-                      }
-                  )
+                      )
 
-                  XposedHelpers.findAndHookMethod(
-                      "android.hardware.camera2.impl.CameraDeviceImpl",
-                      lpparam.classLoader,
-                      "createCaptureSession",
-                      List::class.java,
-                      CameraCaptureSession.StateCallback::class.java,
-                      android.os.Handler::class.java,
-                      object : XC_MethodHook() {
-                          override fun beforeHookedMethod(param: MethodHookParam) {
-                              if (!videoFile.exists()) return
-                              val surfaces = param.args[0] as? List<*> ?: return
-                              for (item in surfaces) {
-                                  if (item is Surface) {
-                                      startVirtualStream(item, videoFile.absolutePath)
+                      XposedHelpers.findAndHookMethod(
+                          "android.hardware.camera2.impl.CameraDeviceImpl",
+                          lpparam.classLoader,
+                          "createCaptureSession",
+                          List::class.java,
+                          CameraCaptureSession.StateCallback::class.java,
+                          android.os.Handler::class.java,
+                          object : XC_MethodHook() {
+                              override fun beforeHookedMethod(param: MethodHookParam) {
+                                  if (!videoFile.exists()) return
+                                  val surfaces = param.args[0] as? List<*> ?: return
+                                  for (item in surfaces) {
+                                      if (item is Surface) {
+                                          startVirtualStream(item, videoFile.absolutePath)
+                                      }
                                   }
                               }
                           }
-                      }
-                  )
-              }
+                      )
+                  }
 
-              private fun startVirtualStream(surface: Surface, videoPath: String) {
-                  try {
-                      mediaPlayer?.release()
-                      mediaPlayer = MediaPlayer().apply {
-                          setSurface(surface)
-                          setDataSource(videoPath)
-                          isLooping = true
-                          val soundEnabled = File("/sdcard/DCIM/Camera1/no-silent.jpg").exists()
-                          if (!soundEnabled) setVolume(0f, 0f)
-                          prepare()
-                          start()
+                  private fun startVirtualStream(surface: Surface, videoPath: String) {
+                      try {
+                          mediaPlayer?.release()
+                          mediaPlayer = MediaPlayer().apply {
+                              setSurface(surface)
+                              setDataSource(videoPath)
+                              isLooping = true
+                              val soundEnabled = File("/sdcard/DCIM/Camera1/no-silent.jpg").exists()
+                              if (!soundEnabled) setVolume(0f, 0f)
+                              prepare()
+                              start()
+                          }
+                      } catch (e: Exception) {
+                          XposedBridge.log("VCam Studio Error: " + e.message)
                       }
-                  } catch (e: Exception) {
-                      XposedBridge.log("VCam Studio Error: ${e.message}")
                   }
               }
-          }
-          EOF
+          """)
 
-          cat << 'EOF' > app/src/main/assets/index.html
-          <!DOCTYPE html>
-          <html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script>tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary-fixed": "#00210b", "on-primary-fixed": "#001945", "inverse-surface": "#e5e2e1", "on-surface-variant": "#c2c6d7", "surface-container-low": "#1c1b1b", "surface": "#131313", "on-background": "#e5e2e1", "secondary": "#7dffa2", "surface-bright": "#393939", "surface-container-lowest": "#0e0e0e", "on-secondary-fixed-variant": "#005226", "error-container": "#93000a", "secondary-fixed-dim": "#00e475", "on-surface": "#e5e2e1", "surface-tint": "#b0c6ff", "on-primary": "#002d6e", "on-error-container": "#ffdad6", "primary-fixed-dim": "#b0c6ff", "on-tertiary": "#370096", "on-tertiary-fixed-variant": "#4f00d0", "surface-container-high": "#2a2a2a", "tertiary-fixed": "#e8deff", "outline": "#8c90a0", "background": "#131313", "on-error": "#690005", "primary-container": "#558dff", "inverse-primary": "#0058ca", "inverse-on-surface": "#313030", "on-secondary-container": "#00622e", "on-secondary": "#003918", "surface-dim": "#131313", "primary": "#b0c6ff", "tertiary-container": "#9a7bff", "on-primary-fixed-variant": "#00429b", "tertiary": "#cdbdff", "tertiary-fixed-dim": "#cdbdff", "outline-variant": "#424655", "error": "#ffb4ab", "surface-variant": "#353534", "on-tertiary-fixed": "#20005f", "secondary-fixed": "#62ff96", "surface-container-highest": "#353534", "on-tertiary-container": "#2f0084", "surface-container": "#201f1f", "secondary-container": "#05e777", "primary-fixed": "#d9e2ff", "on-primary-container": "#002661" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "gutter-tablet": "1rem", "space-xs": "0.25rem", "margin-tablet": "1.5rem", "space-sm": "0.5rem", "margin": "1rem", "gutter": "0.75rem", "space-xl": "1.5rem", "space-lg": "1rem", "space-md": "0.75rem" } } } };</script></head><body class="bg-surface text-on-surface antialiased flex flex-col min-h-screen p-4 gap-4 select-none"><section class="flex items-center justify-between w-full"><div class="flex flex-col"><span class="text-lg font-bold">VCam Studio</span><span class="text-xs text-outline uppercase">Core Hook v4.2.0</span></div><div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high" id="hook-badge"><span class="h-2 w-2 rounded-full bg-secondary animate-ping"></span><span class="text-xs text-secondary font-semibold uppercase">Hook Active</span></div></section><section class="rounded-xl bg-surface-container p-4 flex items-center justify-between"><div class="flex flex-col"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-secondary text-[18px]">cell_tower</span><span class="font-semibold">Enable Virtual Camera</span></div><p class="text-xs text-on-surface-variant mt-0.5">Intercepting HAL video pipes & camera sensors</p></div><button aria-checked="true" class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full bg-surface-container-highest" id="master-toggle"><span class="absolute inset-0 rounded-full bg-secondary-container/40" id="master-toggle-track"></span><span class="inline-block h-5 w-5 transform translate-x-6 rounded-full bg-secondary transition-transform m-1" id="master-toggle-thumb"></span></button></section><section class="flex flex-col gap-2 w-full"><div class="relative w-full aspect-video rounded-xl bg-surface-container-lowest overflow-hidden shadow-xl flex items-center justify-center"><div class="absolute inset-0 bg-cover bg-center opacity-60" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAo2WFr9zsmLulVu4oSuai3H7ez51r5z9BOOS2WByjOzcjtaHFnh6AX2AOWypDhcYZbyeJKmVG1kVtCcGZLBjMgVlSR6S8cMwKTfuILQ1h2IM7AI9ipoxbCjneQIMfhzbSic6VtItis-m1T5EO2ypg11vIr295YYfatS323NwQ35RHv9HTvINe-HXgZYRIgQy1CXjoSsK1Kyqmax9k9CJpuzPyHdLJqi4S7W-PS4yoPZM4h0MdwYo6E')"></div><div class="absolute top-2.5 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/80"><span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span><span class="text-[10px] text-error font-semibold">REC // LIVE</span></div><div class="absolute top-2.5 right-3 px-2 py-0.5 rounded bg-surface-container-lowest/80"><span class="text-[10px] text-primary">1080p • 30fps • RAW</span></div><button class="relative z-10 w-12 h-12 rounded-full bg-surface-container-high/70 flex items-center justify-center text-primary-fixed" id="playback-btn"><span class="material-symbols-outlined text-[26px]" id="playback-icon">pause</span></button><div class="absolute bottom-2 inset-x-3 flex items-center justify-between text-[10px] px-2 py-1 rounded bg-surface-container-lowest/70"><span class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[13px]">graphic_eq</span>CH 1/2 VIRTUALIZED</span><span>DELAY: 12ms</span></div></div><div class="grid grid-cols-2 gap-2 mt-1"><button class="flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-primary-container text-on-primary-container font-semibold text-sm" id="btn-pick"><span class="material-symbols-outlined text-[20px]">folder_open</span><span>Select Video/Image</span></button><button class="flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-surface-container-high text-primary font-semibold text-sm" id="btn-stream"><span class="material-symbols-outlined text-[18px]">satellite_alt</span><span>Stream URL</span></button></div></section><section class="flex flex-col gap-2 w-full"><div class="flex items-center justify-between text-xs"><span class="text-outline uppercase font-bold">Real-time Adjustments</span><span class="text-secondary">4 Shaders Active</span></div><div class="grid grid-cols-2 gap-2"><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-rotate"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">rotate_90_degrees_cw</span><span class="text-xs px-1.5 py-0.5 rounded bg-surface-container-highest" id="rotate-val">0°</span></div><div><div class="text-sm font-medium">Rotate 90°</div><div class="text-[11px] text-outline">Feed Orientation</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-flip"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">flip</span><span class="w-2 h-2 rounded-full bg-outline-variant" id="flip-badge"></span></div><div><div class="text-sm font-medium">Flip Horizontal</div><div class="text-[11px] text-outline">Mirror Inversion</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container-high text-left" id="ctrl-loop"><div class="flex items-center justify-between w-full text-secondary"><span class="material-symbols-outlined text-[19px]">repeat</span><span class="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary/20 font-semibold">ON</span></div><div><div class="text-sm text-secondary font-semibold">Loop Video</div><div class="text-[11px] text-secondary/80">Infinite Buffer</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-mute"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">volume_off</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-container-highest text-outline" id="mute-badge">OFF</span></div><div><div class="text-sm font-medium">Mute Audio</div><div class="text-[11px] text-outline">Virtual Mic Pipe</div></div></button></div></section><script>(function(){const callAndroid=(fn,...args)=>{if(window.AndroidBridge&&typeof window.AndroidBridge[fn]==='function')window.AndroidBridge[fn](...args);};const masterToggle=document.getElementById('master-toggle');const toggleTrack=document.getElementById('master-toggle-track');const toggleThumb=document.getElementById('master-toggle-thumb');const hookBadge=document.getElementById('hook-badge');let isActive=true;masterToggle?.addEventListener('click',()=>{isActive=!isActive;if(isActive){toggleTrack.classList.remove('opacity-0');toggleThumb.classList.replace('translate-x-0','translate-x-6');hookBadge.classList.remove('opacity-40');}else{toggleTrack.classList.add('opacity-0');toggleThumb.classList.replace('translate-x-6','translate-x-0');hookBadge.classList.add('opacity-40');}callAndroid('setMasterEnabled',isActive);});document.getElementById('btn-pick')?.addEventListener('click',()=>callAndroid('pickMedia'));document.getElementById('btn-stream')?.addEventListener('click',()=>{const url=prompt('Stream URL (RTMP/HTTP):','http://');if(url&&url!=='http://')callAndroid('setStreamUrl',url);});const playBtn=document.getElementById('playback-btn');const playIcon=document.getElementById('playback-icon');let isPlaying=true;playBtn?.addEventListener('click',()=>{isPlaying=!isPlaying;playIcon.textContent=isPlaying?'pause':'play_arrow';callAndroid('setPlaybackState',isPlaying);});const rotBtn=document.getElementById('ctrl-rotate');const rotVal=document.getElementById('rotate-val');let currentDeg=0;rotBtn?.addEventListener('click',()=>{currentDeg=(currentDeg+90)%360;rotVal.textContent=currentDeg+'°';callAndroid('setRotation',currentDeg);});const muteBtn=document.getElementById('ctrl-mute');const muteBadge=document.getElementById('mute-badge');let isMuted=false;muteBtn?.addEventListener('click',()=>{isMuted=!isMuted;muteBadge.textContent=isMuted?'ON':'OFF';callAndroid('setMute',isMuted);});const flipBtn=document.getElementById('ctrl-flip');const flipBadge=document.getElementById('flip-badge');let isFlipped=false;flipBtn?.addEventListener('click',()=>{isFlipped=!isFlipped;flipBadge.classList.toggle('bg-primary',isFlipped);flipBadge.classList.toggle('bg-outline-variant',!isFlipped);callAndroid('setFlip',isFlipped);});})();</script></body></html>
-          EOF
+          write_file("app/src/main/assets/index.html", """
+              <!DOCTYPE html>
+              <html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script>tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary-fixed": "#00210b", "on-primary-fixed": "#001945", "inverse-surface": "#e5e2e1", "on-surface-variant": "#c2c6d7", "surface-container-low": "#1c1b1b", "surface": "#131313", "on-background": "#e5e2e1", "secondary": "#7dffa2", "surface-bright": "#393939", "surface-container-lowest": "#0e0e0e", "on-secondary-fixed-variant": "#005226", "error-container": "#93000a", "secondary-fixed-dim": "#00e475", "on-surface": "#e5e2e1", "surface-tint": "#b0c6ff", "on-primary": "#002d6e", "on-error-container": "#ffdad6", "primary-fixed-dim": "#b0c6ff", "on-tertiary": "#370096", "on-tertiary-fixed-variant": "#4f00d0", "surface-container-high": "#2a2a2a", "tertiary-fixed": "#e8deff", "outline": "#8c90a0", "background": "#131313", "on-error": "#690005", "primary-container": "#558dff", "inverse-primary": "#0058ca", "inverse-on-surface": "#313030", "on-secondary-container": "#00622e", "on-secondary": "#003918", "surface-dim": "#131313", "primary": "#b0c6ff", "tertiary-container": "#9a7bff", "on-primary-fixed-variant": "#00429b", "tertiary": "#cdbdff", "tertiary-fixed-dim": "#cdbdff", "outline-variant": "#424655", "error": "#ffb4ab", "surface-variant": "#353534", "on-tertiary-fixed": "#20005f", "secondary-fixed": "#62ff96", "surface-container-highest": "#353534", "on-tertiary-container": "#2f0084", "surface-container": "#201f1f", "secondary-container": "#05e777", "primary-fixed": "#d9e2ff", "on-primary-container": "#002661" } } } };</script></head><body class="bg-surface text-on-surface antialiased flex flex-col min-h-screen p-4 gap-4 select-none"><section class="flex items-center justify-between w-full"><div class="flex flex-col"><span class="text-lg font-bold">VCam Studio</span><span class="text-xs text-outline uppercase">Core Hook v4.2.0</span></div><div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high" id="hook-badge"><span class="h-2 w-2 rounded-full bg-secondary animate-ping"></span><span class="text-xs text-secondary font-semibold uppercase">Hook Active</span></div></section><section class="rounded-xl bg-surface-container p-4 flex items-center justify-between"><div class="flex flex-col"><div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-secondary text-[18px]">cell_tower</span><span class="font-semibold">Enable Virtual Camera</span></div><p class="text-xs text-on-surface-variant mt-0.5">Intercepting HAL video pipes & camera sensors</p></div><button aria-checked="true" class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full bg-surface-container-highest" id="master-toggle"><span class="absolute inset-0 rounded-full bg-secondary-container/40" id="master-toggle-track"></span><span class="inline-block h-5 w-5 transform translate-x-6 rounded-full bg-secondary transition-transform m-1" id="master-toggle-thumb"></span></button></section><section class="flex flex-col gap-2 w-full"><div class="relative w-full aspect-video rounded-xl bg-surface-container-lowest overflow-hidden shadow-xl flex items-center justify-center"><div class="absolute inset-0 bg-cover bg-center opacity-60" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAo2WFr9zsmLulVu4oSuai3H7ez51r5z9BOOS2WByjOzcjtaHFnh6AX2AOWypDhcYZbyeJKmVG1kVtCcGZLBjMgVlSR6S8cMwKTfuILQ1h2IM7AI9ipoxbCjneQIMfhzbSic6VtItis-m1T5EO2ypg11vIr295YYfatS323NwQ35RHv9HTvINe-HXgZYRIgQy1CXjoSsK1Kyqmax9k9CJpuzPyHdLJqi4S7W-PS4yoPZM4h0MdwYo6E')"></div><div class="absolute top-2.5 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/80"><span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span><span class="text-[10px] text-error font-semibold">REC // LIVE</span></div><div class="absolute top-2.5 right-3 px-2 py-0.5 rounded bg-surface-container-lowest/80"><span class="text-[10px] text-primary">1080p • 30fps • RAW</span></div><button class="relative z-10 w-12 h-12 rounded-full bg-surface-container-high/70 flex items-center justify-center text-primary-fixed" id="playback-btn"><span class="material-symbols-outlined text-[26px]" id="playback-icon">pause</span></button><div class="absolute bottom-2 inset-x-3 flex items-center justify-between text-[10px] px-2 py-1 rounded bg-surface-container-lowest/70"><span class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[13px]">graphic_eq</span>CH 1/2 VIRTUALIZED</span><span>DELAY: 12ms</span></div></div><div class="grid grid-cols-2 gap-2 mt-1"><button class="flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-primary-container text-on-primary-container font-semibold text-sm" id="btn-pick"><span class="material-symbols-outlined text-[20px]">folder_open</span><span>Select Video/Image</span></button><button class="flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-surface-container-high text-primary font-semibold text-sm" id="btn-stream"><span class="material-symbols-outlined text-[18px]">satellite_alt</span><span>Stream URL</span></button></div></section><section class="flex flex-col gap-2 w-full"><div class="flex items-center justify-between text-xs"><span class="text-outline uppercase font-bold">Real-time Adjustments</span><span class="text-secondary">4 Shaders Active</span></div><div class="grid grid-cols-2 gap-2"><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-rotate"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">rotate_90_degrees_cw</span><span class="text-xs px-1.5 py-0.5 rounded bg-surface-container-highest" id="rotate-val">0°</span></div><div><div class="text-sm font-medium">Rotate 90°</div><div class="text-[11px] text-outline">Feed Orientation</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-flip"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">flip</span><span class="w-2 h-2 rounded-full bg-outline-variant" id="flip-badge"></span></div><div><div class="text-sm font-medium">Flip Horizontal</div><div class="text-[11px] text-outline">Mirror Inversion</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container-high text-left" id="ctrl-loop"><div class="flex items-center justify-between w-full text-secondary"><span class="material-symbols-outlined text-[19px]">repeat</span><span class="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary/20 font-semibold">ON</span></div><div><div class="text-sm text-secondary font-semibold">Loop Video</div><div class="text-[11px] text-secondary/80">Infinite Buffer</div></div></button><button class="flex flex-col justify-between p-3 h-24 rounded-xl bg-surface-container text-left" id="ctrl-mute"><div class="flex items-center justify-between w-full"><span class="material-symbols-outlined text-[19px]">volume_off</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-container-highest text-outline" id="mute-badge">OFF</span></div><div><div class="text-sm font-medium">Mute Audio</div><div class="text-[11px] text-outline">Virtual Mic Pipe</div></div></button></div></section><script>(function(){const callAndroid=(fn,...args)=>{if(window.AndroidBridge&&typeof window.AndroidBridge[fn]==='function')window.AndroidBridge[fn](...args);};const masterToggle=document.getElementById('master-toggle');const toggleTrack=document.getElementById('master-toggle-track');const toggleThumb=document.getElementById('master-toggle-thumb');const hookBadge=document.getElementById('hook-badge');let isActive=true;masterToggle?.addEventListener('click',()=>{isActive=!isActive;if(isActive){toggleTrack.classList.remove('opacity-0');toggleThumb.classList.replace('translate-x-0','translate-x-6');hookBadge.classList.remove('opacity-40');}else{toggleTrack.classList.add('opacity-0');toggleThumb.classList.replace('translate-x-6','translate-x-0');hookBadge.classList.add('opacity-40');}callAndroid('setMasterEnabled',isActive);});document.getElementById('btn-pick')?.addEventListener('click',()=>callAndroid('pickMedia'));document.getElementById('btn-stream')?.addEventListener('click',()=>{const url=prompt('Stream URL (RTMP/HTTP):','http://');if(url&&url!=='http://')callAndroid('setStreamUrl',url);});const playBtn=document.getElementById('playback-btn');const playIcon=document.getElementById('playback-icon');let isPlaying=true;playBtn?.addEventListener('click',()=>{isPlaying=!isPlaying;playIcon.textContent=isPlaying?'pause':'play_arrow';callAndroid('setPlaybackState',isPlaying);});const rotBtn=document.getElementById('ctrl-rotate');const rotVal=document.getElementById('rotate-val');let currentDeg=0;rotBtn?.addEventListener('click',()=>{currentDeg=(currentDeg+90)%360;rotVal.textContent=currentDeg+'°';callAndroid('setRotation',currentDeg);});const muteBtn=document.getElementById('ctrl-mute');const muteBadge=document.getElementById('mute-badge');let isMuted=false;muteBtn?.addEventListener('click',()=>{isMuted=!isMuted;muteBadge.textContent=isMuted?'ON':'OFF';callAndroid('setMute',isMuted);});const flipBtn=document.getElementById('ctrl-flip');const flipBadge=document.getElementById('flip-badge');let isFlipped=false;flipBtn?.addEventListener('click',()=>{isFlipped=!isFlipped;flipBadge.classList.toggle('bg-primary',isFlipped);flipBadge.classList.toggle('bg-outline-variant',!isFlipped);callAndroid('setFlip',isFlipped);});})();</script></body></html>
+          """)
+          PYEOF
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -313,10 +360,11 @@ jobs:
           gradle-version: '8.4'
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload Compiled APK
         uses: actions/upload-artifact@v4
         with:
           name: VCam-Studio-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+concurrency: 
